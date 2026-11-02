@@ -45,12 +45,13 @@ window.DATA = {
       extra: "Pluto räknades som planet från 1930 till 2006 och är nu en dvärgplanet.",
       points: [
         { t: "Liknar en planet", k: ["planet", "liknar", "som en planet", "nästan"] },
-        { t: "Men är mindre", k: ["mindre", "liten", "små", "lite"] },
+        { t: "Men är mindre", k: ["mindre", "liten", "små", "inte lika stor"] },
       ] },
     { term: "Asteroid", answer: "En liten himlakropp, mindre än en dvärgplanet.",
       extra: "Många asteroider finns i ett bälte mellan Mars och Jupiter.",
       points: [
-        { t: "En liten himlakropp, mindre än en dvärgplanet", k: ["sten", "liten", "mindre", "klippa", "himlakropp", "klump", "små"] },
+        { t: "En himlakropp, en klump av sten", k: ["himlakropp", "sten", "klippa", "klump", "block"] },
+        { t: "Mindre än en dvärgplanet", k: ["mindre än en dvärg", "mindre än dvärg", "mindre än pluto", "inte lika stor som en dvärg", "inte lika stora som dvärg"] },
       ] },
     { term: "Stjärnfall", answer: "En strimma ljus som syns en kort stund på himlen. Det är ingen stjärna som faller, utan en sten från rymden som glöder när den kommer in i atmosfären.",
       extra: "Stjärnfall är vanliga att se i augusti.",
