@@ -94,7 +94,11 @@ let session = null;
 
 function startSession(items, title) {
   if (!items.length) { location.hash = ""; return; }
-  session = { items, title, idx: 0, results: [] };
+  // Fördela platsen för rätt svar jämnt över passet (1, 2, 3, 4 i blandad ordning, om och om igen),
+  // så att rätt svar aldrig råkar hamna på samma plats många gånger i rad.
+  let deck = [];
+  const slots = items.map(() => { if (!deck.length) deck = shuffle([0, 1, 2, 3]); return deck.pop(); });
+  session = { items, title, idx: 0, results: [], slots };
   show("play");
   renderItem();
 }
@@ -171,8 +175,10 @@ function renderDone() {
 function renderChoice(it, stage) {
   let opts;
   if (it.type === "tf") opts = ["Sant", "Falskt"];
-  else if (it.type === "year") opts = shuffle([it.answer, ...shuffle(YEARS.filter((y) => y !== it.answer)).slice(0, 3)]);
-  else opts = shuffle([it.answer, ...it.wrong]);
+  else {
+    opts = it.type === "year" ? shuffle(YEARS.filter((y) => y !== it.answer)).slice(0, 3) : shuffle(it.wrong);
+    opts.splice(session.slots[session.idx] % (opts.length + 1), 0, it.answer);
+  }
   const box = h("div", { class: `options${it.type === "tf" ? " tf" : ""}` });
   const verdict = h("div", { class: "verdict", hidden: true });
   for (const o of opts) {
