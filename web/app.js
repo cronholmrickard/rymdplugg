@@ -38,12 +38,12 @@ function saveResult(id, ok) {
 const MODE = Object.fromEntries(D.modes.map((m) => [m.id, m]));
 const ITEMS = [];
 D.begrepp.forEach((b, i) => ITEMS.push({ id: `begrepp-${i}`, mode: "begrepp", type: "open", stem: b.term, term: true, sub: "Förklara begreppet med egna ord.", answer: b.answer, extra: b.extra, points: b.points, book: window.BOOK?.begrepp[b.term] }));
-D.fakta.forEach(([q, a, wrong, why], i) => ITEMS.push({ id: `fakta-${i}`, mode: "fakta", type: "mc", stem: q, answer: a, wrong, why }));
-D.santfalskt.forEach(([q, v, why], i) => ITEMS.push({ id: `sf-${i}`, mode: "santfalskt", type: "tf", stem: q, answer: v ? "Sant" : "Falskt", why }));
-D.vemarjag.forEach((r, i) => ITEMS.push({ id: `vem-${i}`, mode: "vemarjag", type: "who", stem: r.q, answer: r.answer, k: r.k }));
-D.ordna.forEach((o, i) => ITEMS.push({ id: `ordna-${i}`, mode: "ordna", type: "order", stem: o.title, items: o.items, tip: o.tip }));
+D.fakta.forEach(([q, a, wrong, why], i) => ITEMS.push({ id: `fakta-${i}`, mode: "fakta", type: "mc", stem: q, answer: a, wrong, why, book: window.BOOK?.fakta[i] }));
+D.santfalskt.forEach(([q, v, why], i) => ITEMS.push({ id: `sf-${i}`, mode: "santfalskt", type: "tf", stem: q, answer: v ? "Sant" : "Falskt", why, book: window.BOOK?.santfalskt[i] }));
+D.vemarjag.forEach((r, i) => ITEMS.push({ id: `vem-${i}`, mode: "vemarjag", type: "who", stem: r.q, answer: r.answer, k: r.k, book: window.BOOK?.vemarjag[i] }));
+D.ordna.forEach((o, i) => ITEMS.push({ id: `ordna-${i}`, mode: "ordna", type: "order", stem: o.title, items: o.items, tip: o.tip, book: window.BOOK?.ordna[i] }));
 const YEARS = D.tidslinje.map((t) => t[1]);
-D.tidslinje.forEach(([ev, y], i) => ITEMS.push({ id: `tid-${i}`, mode: "tidslinje", type: "year", stem: ev, sub: "Vilket år eller vilken tid?", answer: y, why: "" }));
+D.tidslinje.forEach(([ev, y], i) => ITEMS.push({ id: `tid-${i}`, mode: "tidslinje", type: "year", stem: ev, sub: "Vilket år eller vilken tid?", answer: y, why: "", book: window.BOOK?.tidslinje[i] }));
 D.resonera.forEach((r, i) => ITEMS.push({ id: `res-${i}`, mode: "resonera", type: "open", stem: r.q, level: r.level, sub: "Svara med hela meningar. Använd gärna eftersom och därför att.", answer: r.answer, extra: r.extra, points: r.points, book: window.BOOK?.resonera[i] }));
 
 const KEEP_ORDER = new Set(["ordna", "resonera"]);
@@ -189,6 +189,8 @@ function renderChoice(it, stage) {
   }
   const box = h("div", { class: `options${it.type === "tf" ? " tf" : ""}` });
   const verdict = h("div", { class: "verdict", hidden: true });
+  const book = it.book ? bookBox(it.book) : null;
+  if (book) book.hidden = true;
   for (const o of opts) {
     box.append(h("button", { type: "button", class: "opt", onclick: (e) => {
       const ok = o === it.answer;
@@ -198,17 +200,20 @@ function renderChoice(it, stage) {
       verdict.append(h("b", {}, ok ? "Rätt!" : `Rätt svar: ${it.answer}`));
       if (it.why) verdict.append(h("p", {}, it.why));
       verdict.hidden = false;
+      if (book) book.hidden = false;
       revealInView(verdict);
       finish(it, ok);
     } }, o));
   }
-  stage.append(box, verdict);
+  stage.append(box, verdict, book || "");
 }
 
 /* ---------- Ordna ---------- */
 function renderOrder(it, stage, actions) {
   const picked = h("div", { class: "picked" }), pool = h("div", { class: "pool" });
   const result = h("div", { class: "verdict", hidden: true });
+  const book = it.book ? bookBox(it.book) : null;
+  if (book) book.hidden = true;
   const check = btn("Kontrollera", "primary", doCheck, { disabled: true });
   const update = () => { check.disabled = pool.children.length > 0; };
   for (const name of shuffle(it.items)) {
@@ -229,10 +234,11 @@ function renderOrder(it, stage, actions) {
     if (!all) result.append(h("p", {}, "Rätt ordning:"), h("ol", { class: "solution" }, it.items.map((x) => h("li", {}, x))));
     if (it.tip) result.append(h("p", {}, it.tip));
     result.hidden = false;
+    if (book) book.hidden = false;
     revealInView(result);
     finish(it, all);
   }
-  stage.append(h("p", { class: "sub" }, "Din ordning (tryck på ett ord för att ta bort det):"), picked, h("p", { class: "sub" }, "Ord att välja bland:"), pool, result);
+  stage.append(h("p", { class: "sub" }, "Din ordning (tryck på ett ord för att ta bort det):"), picked, h("p", { class: "sub" }, "Ord att välja bland:"), pool, result, book || "");
   actions.append(check);
 }
 
@@ -419,7 +425,7 @@ function renderWho(it, stage, actions) {
   stage.append(area);
   const giveUp = () => {
     area.innerHTML = "";
-    area.append(h("div", { class: "verdict info" }, h("b", {}, "Svaret är"), h("p", {}, it.answer)));
+    area.append(h("div", { class: "verdict info" }, h("b", {}, "Svaret är"), h("p", {}, it.answer)), it.book ? bookBox(it.book) : "");
     finish(it, false);
   };
   const record = () => {
@@ -430,14 +436,14 @@ function renderWho(it, stage, actions) {
   function check(text, audio) {
     area.innerHTML = ""; actions.innerHTML = "";
     if (text && mentions(norm(text), it.k)) {
-      area.append(saidBox(text, { audio }), h("div", { class: "verdict ok" }, h("b", {}, "Rätt!"), h("p", {}, it.answer)));
+      area.append(saidBox(text, { audio }), h("div", { class: "verdict ok" }, h("b", {}, "Rätt!"), h("p", {}, it.answer)), it.book ? bookBox(it.book) : "");
       finish(it, true);
       return;
     }
     area.append(
       saidBox(text, { audio, onEdit: (v) => check(v, audio), extra: text ? btn("Jag sa rätt, den hörde fel", "small", () => {
         area.innerHTML = "";
-        area.append(h("div", { class: "verdict ok" }, h("b", {}, "Okej, rätt!"), h("p", {}, it.answer)));
+        area.append(h("div", { class: "verdict ok" }, h("b", {}, "Okej, rätt!"), h("p", {}, it.answer)), it.book ? bookBox(it.book) : "");
         finish(it, true);
       }) : null }),
       h("div", { class: "verdict no" }, h("b", {}, text ? "Inte riktigt" : "Inga ord kom fram"), h("p", {}, text ? "Läs ledtrådarna igen och försök en gång till." : "Försök en gång till och prata tydligt.")));
