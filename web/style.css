@@ -227,3 +227,7 @@ button:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
 .mode-note { font-size: 0.9rem; color: var(--muted); }
 .typed { display: grid; gap: 10px; }
 .typed .mic-label { text-align: left; }
+.book { border-left: 4px solid var(--sun); background: var(--sun-soft); border-radius: 4px 14px 14px 4px; padding: 12px 14px; display: grid; gap: 6px; }
+.book-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.book .lbl { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sun); }
+.book p { font-family: Georgia, "Times New Roman", serif; line-height: 1.5; }

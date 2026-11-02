@@ -37,14 +37,14 @@ function saveResult(id, ok) {
 /* ---------- Alla frågor som en lista ---------- */
 const MODE = Object.fromEntries(D.modes.map((m) => [m.id, m]));
 const ITEMS = [];
-D.begrepp.forEach((b, i) => ITEMS.push({ id: `begrepp-${i}`, mode: "begrepp", type: "open", stem: b.term, term: true, sub: "Förklara begreppet med egna ord.", answer: b.answer, extra: b.extra, points: b.points }));
+D.begrepp.forEach((b, i) => ITEMS.push({ id: `begrepp-${i}`, mode: "begrepp", type: "open", stem: b.term, term: true, sub: "Förklara begreppet med egna ord.", answer: b.answer, extra: b.extra, points: b.points, book: window.BOOK?.begrepp[b.term] }));
 D.fakta.forEach(([q, a, wrong, why], i) => ITEMS.push({ id: `fakta-${i}`, mode: "fakta", type: "mc", stem: q, answer: a, wrong, why }));
 D.santfalskt.forEach(([q, v, why], i) => ITEMS.push({ id: `sf-${i}`, mode: "santfalskt", type: "tf", stem: q, answer: v ? "Sant" : "Falskt", why }));
 D.vemarjag.forEach((r, i) => ITEMS.push({ id: `vem-${i}`, mode: "vemarjag", type: "who", stem: r.q, answer: r.answer, k: r.k }));
 D.ordna.forEach((o, i) => ITEMS.push({ id: `ordna-${i}`, mode: "ordna", type: "order", stem: o.title, items: o.items, tip: o.tip }));
 const YEARS = D.tidslinje.map((t) => t[1]);
 D.tidslinje.forEach(([ev, y], i) => ITEMS.push({ id: `tid-${i}`, mode: "tidslinje", type: "year", stem: ev, sub: "Vilket år eller vilken tid?", answer: y, why: "" }));
-D.resonera.forEach((r, i) => ITEMS.push({ id: `res-${i}`, mode: "resonera", type: "open", stem: r.q, level: r.level, sub: "Svara med hela meningar. Använd gärna eftersom och därför att.", answer: r.answer, extra: r.extra, points: r.points }));
+D.resonera.forEach((r, i) => ITEMS.push({ id: `res-${i}`, mode: "resonera", type: "open", stem: r.q, level: r.level, sub: "Svara med hela meningar. Använd gärna eftersom och därför att.", answer: r.answer, extra: r.extra, points: r.points, book: window.BOOK?.resonera[i] }));
 
 const KEEP_ORDER = new Set(["ordna", "resonera"]);
 const itemsFor = (mode) => ITEMS.filter((it) => it.mode === mode);
@@ -404,6 +404,7 @@ function renderOpen(it, stage, actions) {
         h("li", { class: hits[i] ? "hit" : "" }, h("span", { class: "mark", "aria-label": hits[i] ? "Med" : "Saknas" }, hits[i] ? "✓" : ""), h("span", {}, p.t)))),
       h("div", { class: "model" }, h("span", { class: "lbl" }, "Exempel på svar"), h("p", {}, it.answer)),
       it.extra ? h("p", { class: "extra" }, h("b", {}, "Bra att veta: "), it.extra) : null,
+      it.book ? bookBox(it.book) : null,
       h("p", { class: "sub" }, "Jämför med ditt svar. Kunde du det?"));
     actions.append(
       btn("Öva mer", "bad", () => finish(it, false, { advance: true })),
@@ -700,9 +701,9 @@ $("#engine-action").onclick = () => {
 };
 
 /* ---------- Uppläsning ---------- */
-function speakButton(text) {
+function speakButton(text, label = "Läs upp frågan") {
   if (!("speechSynthesis" in window)) return null;
-  const b = h("button", { type: "button", class: "speak", "aria-label": "Läs upp frågan" });
+  const b = h("button", { type: "button", class: "speak", "aria-label": label });
   b.innerHTML = SPEAK_ICON;
   b.onclick = () => {
     if (b.classList.contains("on")) { speechSynthesis.cancel(); b.classList.remove("on"); return; }
@@ -717,6 +718,13 @@ function speakButton(text) {
     speechSynthesis.speak(u);
   };
   return b;
+}
+
+// Det läroboken säger, med knapp för uppläsning.
+function bookBox([page, text]) {
+  return h("div", { class: "book" },
+    h("div", { class: "book-head" }, h("span", { class: "lbl" }, `Så står det i boken, sidan ${page}`), speakButton(text, "Läs upp texten ur boken")),
+    h("p", {}, text));
 }
 
 function stopEverything() {

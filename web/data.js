@@ -47,10 +47,10 @@ window.DATA = {
         { t: "Liknar en planet", k: ["planet", "liknar", "som en planet", "nästan"] },
         { t: "Men är mindre", k: ["mindre", "liten", "små", "inte lika stor"] },
       ] },
-    { term: "Asteroid", answer: "En liten himlakropp, mindre än en dvärgplanet.",
+    { term: "Asteroid", answer: "En himlakropp som är ännu mindre än en dvärgplanet.",
       extra: "Många asteroider finns i ett bälte mellan Mars och Jupiter.",
       points: [
-        { t: "En himlakropp, en klump av sten", k: ["himlakropp", "sten", "klippa", "klump", "block"] },
+        { t: "En himlakropp", k: ["himlakropp", "sten", "klippa", "klump", "block"] },
         { t: "Mindre än en dvärgplanet", k: ["mindre än en dvärg", "mindre än dvärg", "mindre än pluto", "inte lika stor som en dvärg", "inte lika stora som dvärg"] },
       ] },
     { term: "Stjärnfall", answer: "En strimma ljus som syns en kort stund på himlen. Det är ingen stjärna som faller, utan en sten från rymden som glöder när den kommer in i atmosfären.",
