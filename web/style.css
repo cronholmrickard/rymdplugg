@@ -36,6 +36,8 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; }
+/* Reservera plats för scrollbaren så att sidan inte hoppar i sidled när innehållet blir högre. */
+html { scrollbar-gutter: stable; }
 body {
   background: var(--bg); color: var(--ink);
   font-family: var(--body); font-size: 18px; line-height: 1.5;

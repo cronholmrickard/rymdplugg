@@ -171,6 +171,14 @@ function renderDone() {
   show("done");
 }
 
+// Scrolla fram rutan om den hamnar under knapparna längst ner.
+function revealInView(el) {
+  requestAnimationFrame(() => {
+    const bottom = el.getBoundingClientRect().bottom, limit = $("#actions").getBoundingClientRect().top - 12;
+    if (bottom > limit) window.scrollBy({ top: bottom - limit, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  });
+}
+
 /* ---------- Flerval, sant/falskt och årtal ---------- */
 function renderChoice(it, stage) {
   let opts;
@@ -190,6 +198,7 @@ function renderChoice(it, stage) {
       verdict.append(h("b", {}, ok ? "Rätt!" : `Rätt svar: ${it.answer}`));
       if (it.why) verdict.append(h("p", {}, it.why));
       verdict.hidden = false;
+      revealInView(verdict);
       finish(it, ok);
     } }, o));
   }
@@ -220,6 +229,7 @@ function renderOrder(it, stage, actions) {
     if (!all) result.append(h("p", {}, "Rätt ordning:"), h("ol", { class: "solution" }, it.items.map((x) => h("li", {}, x))));
     if (it.tip) result.append(h("p", {}, it.tip));
     result.hidden = false;
+    revealInView(result);
     finish(it, all);
   }
   stage.append(h("p", { class: "sub" }, "Din ordning (tryck på ett ord för att ta bort det):"), picked, h("p", { class: "sub" }, "Ord att välja bland:"), pool, result);
