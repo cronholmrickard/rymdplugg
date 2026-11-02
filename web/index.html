@@ -30,6 +30,14 @@
     <p class="lede">Välj vad du vill öva på. Där det finns en mikrofon svarar du med rösten.</p>
   </header>
   <main class="wrap">
+    <div class="answer-mode" role="radiogroup" aria-label="Svara med">
+      <span class="lbl">Svara med</span>
+      <div class="seg">
+        <button type="button" role="radio" data-mode="pianissimo">Pianissimo</button>
+        <button type="button" role="radio" data-mode="diktering">Telefonens diktering</button>
+      </div>
+    </div>
+    <p class="mode-note" id="mode-note" hidden>Du svarar i en textruta. Tryck på mikrofonen på tangentbordet och prata, eller skriv. Ingen röstmotor behöver laddas ner.</p>
     <section class="engine" id="engine" data-state="checking" aria-live="polite">
       <p class="engine-title"><span class="dot"></span><span id="engine-title">Röstmotorn startar …</span></p>
       <p class="engine-text" id="engine-text" hidden></p>

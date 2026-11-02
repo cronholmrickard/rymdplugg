@@ -219,3 +219,11 @@ button:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
 .answer-area { display: grid; gap: 12px; }
 .said-edit { width: 100%; font: inherit; font-size: 1.05rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; resize: vertical; }
 .said-edit:focus { outline: 2px solid var(--sky); outline-offset: 1px; }
+.answer-mode { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.answer-mode .lbl { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+.seg button { font: inherit; font-size: 0.9rem; border: 0; background: none; color: var(--muted); padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+.seg button[aria-checked="true"] { background: var(--sky); color: var(--surface); font-weight: 700; }
+.mode-note { font-size: 0.9rem; color: var(--muted); }
+.typed { display: grid; gap: 10px; }
+.typed .mic-label { text-align: left; }

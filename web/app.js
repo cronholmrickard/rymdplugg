@@ -252,7 +252,23 @@ const mentions = (said, keys) => keys.some((k) => {
 
 // Mikrofonknapp med inspelning, ljudnivåmätare och transkribering.
 // Anropar onText(text, ljud) med det hon sa och inspelningen i 16 kHz.
+// Svarssätt: Pianissimo i telefonen, eller en textruta där hon använder tangentbordets diktering.
+const MODE_KEY = "rymdplugg:svarssatt";
+function answerMode() {
+  try { return localStorage.getItem(MODE_KEY) === "diktering" ? "diktering" : "pianissimo"; } catch { return "pianissimo"; }
+}
+const dictating = () => answerMode() === "diktering";
+
+function textInput(onText, label) {
+  const ta = h("textarea", { class: "said-edit", rows: "4", "aria-label": label,
+    placeholder: "Tryck på mikrofonen på tangentbordet och prata, eller skriv." });
+  const done = () => { const v = ta.value.replace(/\s+/g, " ").trim(); if (v) onText(v, null); else ta.focus(); };
+  return h("div", { class: "typed" }, h("p", { class: "mic-label" }, label), ta,
+    btn("Klar", "primary", done));
+}
+
 function voiceInput(onText, label = "Tryck och svara") {
+  if (dictating()) return textInput(onText, label.replace(/^Tryck och /, "").replace(/^./, (c) => c.toUpperCase()));
   const mic = h("button", { type: "button", class: "mic", "aria-label": "Spela in ditt svar" });
   mic.innerHTML = MIC_ICON;
   const meter = h("div", { class: "rec-meter", hidden: true, "aria-hidden": "true" }, h("span"));
@@ -338,7 +354,7 @@ function saidBox(text, opts = {}) {
     : "Jag hörde inget. Prova att prata lite högre och närmare telefonen.");
   const row = h("div", { class: "row" },
     audio ? btn("Lyssna på inspelningen", "small", () => playPcm(audio)) : null,
-    onRedo ? btn("Spela in igen", "small", onRedo) : null,
+    onRedo ? btn(dictating() ? "Svara igen" : "Spela in igen", "small", onRedo) : null,
     onMore && text ? btn("Lägg till mer", "small", onMore) : null,
     onEdit && text ? btn("Ändra texten", "small", () => editSaid(box, text, onEdit)) : null,
     !text && audio && Engine.backend === "webgpu" ? btn("Prova utan WebGPU", "small", () => Engine.useWasm()) : null,
@@ -708,7 +724,23 @@ function stopEverything() {
   if ("speechSynthesis" in window) speechSynthesis.cancel();
 }
 
+function renderAnswerMode() {
+  const mode = answerMode();
+  document.querySelectorAll(".seg [data-mode]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === mode)));
+  $("#mode-note").hidden = mode !== "diktering";
+  $("#engine").hidden = mode === "diktering";
+}
+document.querySelectorAll(".seg [data-mode]").forEach((b) => {
+  b.onclick = () => {
+    try { localStorage.setItem(MODE_KEY, b.dataset.mode); } catch { /* ignoreras */ }
+    // Röstmotorn startas först när den behövs, så diktering slipper ladda 500 MB i minnet.
+    if (!dictating() && !Engine.worker) Engine.start();
+    renderAnswerMode();
+  };
+});
+
 /* ---------- Start ---------- */
 routeFromHash();
 renderEngineCard();
-Engine.start();
+renderAnswerMode();
+if (!dictating()) Engine.start();
