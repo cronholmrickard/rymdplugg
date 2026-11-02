@@ -238,7 +238,17 @@ function renderOrder(it, stage, actions) {
 
 /* ---------- Röstsvar ---------- */
 const norm = (s) => " " + s.toLowerCase().normalize("NFC").replace(/[^a-z0-9åäöéüæø]+/g, " ").trim() + " ";
-const mentions = (said, keys) => keys.some((k) => said.includes(" " + k.toLowerCase()));
+// Nyckelordet ska stå i början av ett ord. Mellanslag inne i ordet tillåts, så att "himla kropp"
+// räknas som himlakropp och "långtbort" som långt bort. Avslutande mellanslag betyder helt ord.
+const keyRe = new Map();
+const mentions = (said, keys) => keys.some((k) => {
+  if (!keyRe.has(k)) {
+    const word = k.toLowerCase().replace(/\s+/g, "");
+    const body = [...word].map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(" ?");
+    keyRe.set(k, new RegExp(" " + body + (/\s$/.test(k) ? " " : "")));
+  }
+  return keyRe.get(k).test(said);
+});
 
 // Mikrofonknapp med inspelning, ljudnivåmätare och transkribering.
 // Anropar onText(text, ljud) med det hon sa och inspelningen i 16 kHz.
@@ -320,7 +330,8 @@ function voiceInput(onText, label = "Tryck och svara") {
 }
 
 // Rutan som visar vad hon sa, med knappar för att lyssna, spela in igen eller lägga till mer.
-function saidBox(text, { onRedo, onMore, extra, audio } = {}) {
+function saidBox(text, opts = {}) {
+  const { onRedo, onMore, onEdit, extra, audio } = opts;
   const t = h("p", { class: `text${text ? "" : " empty"}` });
   t.textContent = text || (audio
     ? "Ljudet kom fram, men röstmotorn hittade inga ord. Lyssna på inspelningen: hörs du tydligt?"
@@ -329,9 +340,23 @@ function saidBox(text, { onRedo, onMore, extra, audio } = {}) {
     audio ? btn("Lyssna på inspelningen", "small", () => playPcm(audio)) : null,
     onRedo ? btn("Spela in igen", "small", onRedo) : null,
     onMore && text ? btn("Lägg till mer", "small", onMore) : null,
+    onEdit && text ? btn("Ändra texten", "small", () => editSaid(box, text, onEdit)) : null,
     !text && audio && Engine.backend === "webgpu" ? btn("Prova utan WebGPU", "small", () => Engine.useWasm()) : null,
     extra || null);
-  return h("div", { class: "said" }, h("span", { class: "lbl" }, "Du sa"), t, row);
+  const box = h("div", { class: "said" }, h("span", { class: "lbl" }, "Du sa"), t, row);
+  box._opts = opts;
+  return box;
+}
+
+// Låter henne rätta det taligenkänningen hörde fel och bedömer sedan om svaret.
+function editSaid(box, text, onEdit) {
+  const ta = h("textarea", { class: "said-edit", rows: "3", "aria-label": "Ändra texten" });
+  ta.value = text;
+  const done = () => { const v = ta.value.replace(/\s+/g, " ").trim(); if (v) onEdit(v); };
+  box.innerHTML = "";
+  box.append(h("span", { class: "lbl" }, "Ändra det du sa"), ta,
+    h("div", { class: "row" }, btn("Spara", "small primary", done), btn("Avbryt", "small", () => box.replaceWith(saidBox(text, box._opts)))));
+  ta.focus();
 }
 
 function renderOpen(it, stage, actions) {
@@ -353,7 +378,7 @@ function renderOpen(it, stage, actions) {
     const n = norm(said);
     const hits = it.points.map((p) => !!said && mentions(n, p.k));
     const count = hits.filter(Boolean).length;
-    if (!skipped || said) area.append(saidBox(said, { audio, onRedo: () => { said = ""; audio = null; record(false); }, onMore: () => record(true) }));
+    if (!skipped || said) area.append(saidBox(said, { audio, onRedo: () => { said = ""; audio = null; record(false); }, onMore: () => record(true), onEdit: (v) => { said = v; reveal(); } }));
     const head = said
       ? count === it.points.length ? "Du fick med allt det här:" : `Du fick med ${count} av ${it.points.length}:`
       : "Ett bra svar tar upp det här:";
@@ -393,7 +418,7 @@ function renderWho(it, stage, actions) {
       return;
     }
     area.append(
-      saidBox(text, { audio, extra: text ? btn("Jag sa rätt, den hörde fel", "small", () => {
+      saidBox(text, { audio, onEdit: (v) => check(v, audio), extra: text ? btn("Jag sa rätt, den hörde fel", "small", () => {
         area.innerHTML = "";
         area.append(h("div", { class: "verdict ok" }, h("b", {}, "Okej, rätt!"), h("p", {}, it.answer)));
         finish(it, true);

@@ -217,3 +217,5 @@ button:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
 .extra { font-size: 0.92rem; color: var(--muted); }
 .extra b { color: var(--ink); }
 .answer-area { display: grid; gap: 12px; }
+.said-edit { width: 100%; font: inherit; font-size: 1.05rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; resize: vertical; }
+.said-edit:focus { outline: 2px solid var(--sky); outline-offset: 1px; }
