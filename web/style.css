@@ -214,3 +214,6 @@ button:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
 /* Ljudnivå under inspelning */
 .rec-meter { width: min(220px, 70%); height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
 .rec-meter span { display: block; height: 100%; width: 0; background: var(--good); border-radius: 5px; transition: width 80ms linear; }
+.extra { font-size: 0.92rem; color: var(--muted); }
+.extra b { color: var(--ink); }
+.answer-area { display: grid; gap: 12px; }

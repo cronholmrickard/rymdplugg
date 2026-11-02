@@ -37,14 +37,14 @@ function saveResult(id, ok) {
 /* ---------- Alla frågor som en lista ---------- */
 const MODE = Object.fromEntries(D.modes.map((m) => [m.id, m]));
 const ITEMS = [];
-D.begrepp.forEach((b, i) => ITEMS.push({ id: `begrepp-${i}`, mode: "begrepp", type: "open", stem: b.term, term: true, sub: "Förklara begreppet med egna ord.", answer: b.answer, points: b.points }));
+D.begrepp.forEach((b, i) => ITEMS.push({ id: `begrepp-${i}`, mode: "begrepp", type: "open", stem: b.term, term: true, sub: "Förklara begreppet med egna ord.", answer: b.answer, extra: b.extra, points: b.points }));
 D.fakta.forEach(([q, a, wrong, why], i) => ITEMS.push({ id: `fakta-${i}`, mode: "fakta", type: "mc", stem: q, answer: a, wrong, why }));
 D.santfalskt.forEach(([q, v, why], i) => ITEMS.push({ id: `sf-${i}`, mode: "santfalskt", type: "tf", stem: q, answer: v ? "Sant" : "Falskt", why }));
 D.vemarjag.forEach((r, i) => ITEMS.push({ id: `vem-${i}`, mode: "vemarjag", type: "who", stem: r.q, answer: r.answer, k: r.k }));
 D.ordna.forEach((o, i) => ITEMS.push({ id: `ordna-${i}`, mode: "ordna", type: "order", stem: o.title, items: o.items, tip: o.tip }));
 const YEARS = D.tidslinje.map((t) => t[1]);
 D.tidslinje.forEach(([ev, y], i) => ITEMS.push({ id: `tid-${i}`, mode: "tidslinje", type: "year", stem: ev, sub: "Vilket år eller vilken tid?", answer: y, why: "" }));
-D.resonera.forEach((r, i) => ITEMS.push({ id: `res-${i}`, mode: "resonera", type: "open", stem: r.q, level: r.level, sub: "Svara med hela meningar. Använd gärna eftersom och därför att.", answer: r.answer, points: r.points }));
+D.resonera.forEach((r, i) => ITEMS.push({ id: `res-${i}`, mode: "resonera", type: "open", stem: r.q, level: r.level, sub: "Svara med hela meningar. Använd gärna eftersom och därför att.", answer: r.answer, extra: r.extra, points: r.points }));
 
 const KEEP_ORDER = new Set(["ordna", "resonera"]);
 const itemsFor = (mode) => ITEMS.filter((it) => it.mode === mode);
@@ -362,6 +362,7 @@ function renderOpen(it, stage, actions) {
       h("ul", { class: "points" }, it.points.map((p, i) =>
         h("li", { class: hits[i] ? "hit" : "" }, h("span", { class: "mark", "aria-label": hits[i] ? "Med" : "Saknas" }, hits[i] ? "✓" : ""), h("span", {}, p.t)))),
       h("div", { class: "model" }, h("span", { class: "lbl" }, "Exempel på svar"), h("p", {}, it.answer)),
+      it.extra ? h("p", { class: "extra" }, h("b", {}, "Bra att veta: "), it.extra) : null,
       h("p", { class: "sub" }, "Jämför med ditt svar. Kunde du det?"));
     actions.append(
       btn("Öva mer", "bad", () => finish(it, false, { advance: true })),
