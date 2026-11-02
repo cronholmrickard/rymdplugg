@@ -208,3 +208,7 @@ button:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Ljudnivå under inspelning */
+.rec-meter { width: min(220px, 70%); height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.rec-meter span { display: block; height: 100%; width: 0; background: var(--good); border-radius: 5px; transition: width 80ms linear; }

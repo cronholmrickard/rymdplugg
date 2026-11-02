@@ -230,13 +230,15 @@ function renderOrder(it, stage, actions) {
 const norm = (s) => " " + s.toLowerCase().normalize("NFC").replace(/[^a-z0-9åäöéüæø]+/g, " ").trim() + " ";
 const mentions = (said, keys) => keys.some((k) => said.includes(" " + k.toLowerCase()));
 
-// Mikrofonknapp med inspelning och transkribering. Anropar onText med det hon sa.
+// Mikrofonknapp med inspelning, ljudnivåmätare och transkribering.
+// Anropar onText(text, ljud) med det hon sa och inspelningen i 16 kHz.
 function voiceInput(onText, label = "Tryck och svara") {
   const mic = h("button", { type: "button", class: "mic", "aria-label": "Spela in ditt svar" });
   mic.innerHTML = MIC_ICON;
+  const meter = h("div", { class: "rec-meter", hidden: true, "aria-hidden": "true" }, h("span"));
   const lbl = h("p", { class: "mic-label" }, label);
   const hint = h("p", { class: "mic-hint" });
-  const box = h("div", { class: "voice" }, mic, lbl, hint);
+  const box = h("div", { class: "voice" }, mic, meter, lbl, hint);
   let busy = false;
   const update = () => {
     if (busy || Rec.active) return;
@@ -248,32 +250,58 @@ function voiceInput(onText, label = "Tryck och svara") {
   const listener = () => { if (box.isConnected) update(); else Engine.listeners.delete(listener); };
   update();
   Engine.listeners.add(listener);
+
+  const fail = (text) => {
+    mic.hidden = false; mic.disabled = false; meter.hidden = true;
+    lbl.textContent = "Försök igen";
+    hint.textContent = text;
+  };
+
   mic.onclick = async () => {
     if (Rec.active) { mic.disabled = true; return Rec.stop(); }
     try {
       await Rec.start((secs) => { lbl.textContent = `Spelar in … ${secs} s`; });
     } catch (err) {
-      hint.textContent = "Mikrofonen gick inte att starta. Tillåt mikrofonen för sidan i Safari och försök igen.";
-      return;
+      return fail("Mikrofonen gick inte att starta. Tillåt mikrofonen för sidan i Safari (aA i adressfältet, Webbplatsinställningar) och försök igen.");
     }
     mic.classList.add("rec"); mic.innerHTML = STOP_ICON; mic.setAttribute("aria-label", "Sluta spela in");
     lbl.textContent = "Spelar in … 0 s"; hint.textContent = "Tryck när du är klar.";
-    let blob;
-    try { blob = await Rec.done; } finally {
-      mic.classList.remove("rec"); mic.innerHTML = MIC_ICON; mic.setAttribute("aria-label", "Spela in ditt svar");
-    }
+    meter.hidden = false;
+
+    // Ljudnivåmätaren: visar att mikrofonen faktiskt tar upp ljud.
+    const bar = meter.firstElementChild, t0 = Date.now();
+    let loudest = 0, warned = false;
+    const draw = () => {
+      if (!Rec.active) return;
+      const level = Rec.level();
+      loudest = Math.max(loudest, level);
+      bar.style.width = `${Math.min(100, Math.round(Math.sqrt(level) * 260))}%`;
+      if (!warned && Date.now() - t0 > 2500 && loudest < 0.004) {
+        warned = true;
+        hint.textContent = "Jag hör inget från mikrofonen. Prata närmare telefonen och kolla att ingen annan app använder mikrofonen.";
+      }
+      requestAnimationFrame(draw);
+    };
+    requestAnimationFrame(draw);
+
+    const rec = await Rec.done;
+    mic.classList.remove("rec"); mic.innerHTML = MIC_ICON; mic.setAttribute("aria-label", "Spela in ditt svar");
+    meter.hidden = true;
     mic.hidden = true;
     busy = true;
     lbl.textContent = ""; lbl.append(h("span", { class: "spinner", role: "status", "aria-label": "Lyssnar" }));
     hint.textContent = "Pianissimo lyssnar på ditt svar …";
     try {
-      const text = await transcribe(blob);
+      const pcm = await to16k(rec);
+      const { peak } = audioStats(pcm);
+      if (pcm.length < 16000 * 0.4) return fail("Inspelningen blev för kort. Tryck, prata och tryck sedan igen.");
+      if (peak < 0.002) return fail("Inspelningen blev helt tyst, mikrofonen gav inget ljud. Kolla att ingen annan app använder mikrofonen och försök igen.");
+      if (peak < 0.5) for (let i = 0; i < pcm.length; i++) pcm[i] *= 0.9 / peak;
+      const text = await transcribe(pcm.slice());
       box.remove();
-      onText(text);
+      onText(text, pcm);
     } catch (err) {
-      mic.hidden = false; mic.disabled = false;
-      lbl.textContent = "Försök igen";
-      hint.textContent = err.message || "Något gick fel med taligenkänningen.";
+      fail(err.message || "Något gick fel med taligenkänningen.");
     } finally {
       busy = false;
     }
@@ -281,19 +309,23 @@ function voiceInput(onText, label = "Tryck och svara") {
   return box;
 }
 
-// Rutan som visar vad hon sa, med knappar för att spela in igen eller lägga till mer.
-function saidBox(text, { onRedo, onMore, extra } = {}) {
+// Rutan som visar vad hon sa, med knappar för att lyssna, spela in igen eller lägga till mer.
+function saidBox(text, { onRedo, onMore, extra, audio } = {}) {
   const t = h("p", { class: `text${text ? "" : " empty"}` });
-  t.textContent = text || "Jag hörde inget. Prova att prata lite högre och närmare telefonen.";
+  t.textContent = text || (audio
+    ? "Ljudet kom fram, men röstmotorn hittade inga ord. Lyssna på inspelningen: hörs du tydligt?"
+    : "Jag hörde inget. Prova att prata lite högre och närmare telefonen.");
   const row = h("div", { class: "row" },
+    audio ? btn("Lyssna på inspelningen", "small", () => playPcm(audio)) : null,
     onRedo ? btn("Spela in igen", "small", onRedo) : null,
     onMore && text ? btn("Lägg till mer", "small", onMore) : null,
+    !text && audio && Engine.backend === "webgpu" ? btn("Prova utan WebGPU", "small", () => Engine.useWasm()) : null,
     extra || null);
   return h("div", { class: "said" }, h("span", { class: "lbl" }, "Du sa"), t, row);
 }
 
 function renderOpen(it, stage, actions) {
-  let said = "";
+  let said = "", audio = null;
   const area = h("div", { class: "answer-area" });
   const wrapper = h("div", { style: "display:grid;gap:14px" }, area);
   stage.append(wrapper);
@@ -301,7 +333,7 @@ function renderOpen(it, stage, actions) {
   const record = (append) => {
     area.innerHTML = "";
     actions.innerHTML = "";
-    area.append(voiceInput((text) => { said = append && said ? `${said} ${text}` : text; reveal(); }, append ? "Tryck och lägg till" : "Tryck och svara"));
+    area.append(voiceInput((text, pcm) => { said = append && said ? `${said} ${text}` : text; audio = pcm; reveal(); }, append ? "Tryck och lägg till" : "Tryck och svara"));
     actions.append(btn("Visa svaret", "", () => { said = said || ""; reveal(true); }));
   };
 
@@ -311,7 +343,7 @@ function renderOpen(it, stage, actions) {
     const n = norm(said);
     const hits = it.points.map((p) => !!said && mentions(n, p.k));
     const count = hits.filter(Boolean).length;
-    if (!skipped || said) area.append(saidBox(said, { onRedo: () => { said = ""; record(false); }, onMore: () => record(true) }));
+    if (!skipped || said) area.append(saidBox(said, { audio, onRedo: () => { said = ""; audio = null; record(false); }, onMore: () => record(true) }));
     const head = said
       ? count === it.points.length ? "Du fick med allt det här:" : `Du fick med ${count} av ${it.points.length}:`
       : "Ett bra svar tar upp det här:";
@@ -342,42 +374,55 @@ function renderWho(it, stage, actions) {
     area.append(voiceInput(check, "Tryck och säg vem jag är"));
     actions.append(btn("Visa svaret", "", giveUp));
   };
-  function check(text) {
+  function check(text, audio) {
     area.innerHTML = ""; actions.innerHTML = "";
     if (text && mentions(norm(text), it.k)) {
-      area.append(saidBox(text), h("div", { class: "verdict ok" }, h("b", {}, "Rätt!"), h("p", {}, it.answer)));
+      area.append(saidBox(text, { audio }), h("div", { class: "verdict ok" }, h("b", {}, "Rätt!"), h("p", {}, it.answer)));
       finish(it, true);
       return;
     }
     area.append(
-      saidBox(text, { extra: text ? btn("Jag sa rätt, den hörde fel", "small", () => {
+      saidBox(text, { audio, extra: text ? btn("Jag sa rätt, den hörde fel", "small", () => {
         area.innerHTML = "";
         area.append(h("div", { class: "verdict ok" }, h("b", {}, "Okej, rätt!"), h("p", {}, it.answer)));
         finish(it, true);
       }) : null }),
-      h("div", { class: "verdict no" }, h("b", {}, text ? "Inte riktigt" : "Jag hörde inget"), h("p", {}, "Läs ledtrådarna igen och försök en gång till.")));
+      h("div", { class: "verdict no" }, h("b", {}, text ? "Inte riktigt" : "Inga ord kom fram"), h("p", {}, text ? "Läs ledtrådarna igen och försök en gång till." : "Försök en gång till och prata tydligt.")));
     actions.append(btn("Visa svaret", "", giveUp), btn("Försök igen", "primary", record));
   }
   record();
 }
 
 /* ---------- Inspelning ---------- */
+// Fångar råa sampel från mikrofonen med Web Audio. Ingen MediaRecorder, inget AAC att avkoda.
 const Rec = {
-  active: false, stream: null, recorder: null, done: null, timer: null, _stop: null,
+  active: false, stream: null, src: null, node: null, sink: null, analyser: null, levelBuf: null,
+  chunks: [], rate: 48000, timer: null, done: null, resolve: null,
   async start(onTick) {
-    getAudioContext(); // måste skapas direkt i användarens tryck, annars stoppar Safari ljudet
+    const ctx = getAudioContext();
+    const resumed = ctx.resume().catch(() => {}); // måste ske direkt i användarens tryck i Safari
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-    const mime = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
-    this.recorder = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
-    const chunks = [];
-    this.recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-    this.done = new Promise((resolve) => {
-      this.recorder.onstop = () => {
-        this._release();
-        resolve(new Blob(chunks, { type: this.recorder.mimeType || mime || "audio/mp4" }));
-      };
-    });
-    this.recorder.start(250);
+    try {
+      await resumed;
+      if (ctx.state !== "running") await ctx.resume();
+      const chunks = (this.chunks = []);
+      this.rate = ctx.sampleRate;
+      this.src = ctx.createMediaStreamSource(this.stream);
+      this.analyser = ctx.createAnalyser();
+      this.analyser.fftSize = 1024;
+      this.levelBuf = new Float32Array(this.analyser.fftSize);
+      this.node = await captureNode(ctx, (data) => chunks.push(data));
+      this.sink = ctx.createGain();
+      this.sink.gain.value = 0;
+      this.src.connect(this.analyser);
+      this.src.connect(this.node);
+      this.node.connect(this.sink);
+      this.sink.connect(ctx.destination);
+    } catch (err) {
+      this._release();
+      throw err;
+    }
+    this.done = new Promise((resolve) => (this.resolve = resolve));
     this.active = true;
     const t0 = Date.now();
     this.timer = setInterval(() => {
@@ -386,19 +431,35 @@ const Rec = {
       if (s >= MAX_REC_SECONDS) this.stop();
     }, 250);
   },
+  level() {
+    if (!this.analyser) return 0;
+    this.analyser.getFloatTimeDomainData(this.levelBuf);
+    let sum = 0;
+    for (const v of this.levelBuf) sum += v * v;
+    return Math.sqrt(sum / this.levelBuf.length);
+  },
   stop() {
-    if (this.recorder && this.recorder.state !== "inactive") this.recorder.stop();
+    if (!this.active) return;
+    const { chunks, rate, resolve } = this;
+    this._release();
+    let n = 0;
+    for (const c of chunks) n += c.length;
+    const pcm = new Float32Array(n);
+    let o = 0;
+    for (const c of chunks) { pcm.set(c, o); o += c.length; }
+    resolve({ pcm, rate });
   },
   cancel() {
-    if (!this.active) return;
-    if (this.recorder) { this.recorder.onstop = () => this._release(); this.stop(); }
-    this._release();
+    if (this.active || this.stream) this._release();
   },
   _release() {
     clearInterval(this.timer);
     this.active = false;
+    for (const n of [this.src, this.analyser, this.node, this.sink]) { try { n && n.disconnect(); } catch { /* redan bortkopplad */ } }
+    if (this.node && this.node.port) this.node.port.onmessage = null;
+    if (this.node) this.node.onaudioprocess = null;
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
-    this.stream = null;
+    this.stream = this.src = this.analyser = this.node = this.sink = null;
   },
 };
 
@@ -408,33 +469,58 @@ function getAudioContext() {
   return audioCtx;
 }
 
-function decode(buf) {
-  const ctx = getAudioContext();
-  return new Promise((resolve, reject) => {
-    const p = ctx.decodeAudioData(buf, resolve, reject);
-    if (p && p.then) p.then(resolve, reject);
-  });
+let workletReady = null;
+async function captureNode(ctx, onData) {
+  if (ctx.audioWorklet && window.AudioWorkletNode) {
+    try {
+      workletReady = workletReady || ctx.audioWorklet.addModule("rec-worklet.js");
+      await workletReady;
+      const node = new AudioWorkletNode(ctx, "rec-capture", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit" });
+      node.port.onmessage = (e) => onData(e.data);
+      return node;
+    } catch {
+      workletReady = null;
+    }
+  }
+  const node = ctx.createScriptProcessor(4096, 1, 1);
+  node.onaudioprocess = (e) => onData(new Float32Array(e.inputBuffer.getChannelData(0)));
+  return node;
 }
 
 // Gör om inspelningen till 16 kHz mono, det format modellen vill ha.
-async function toPcm16k(blob) {
-  const decoded = await decode(await blob.arrayBuffer());
-  const frames = Math.max(1, Math.ceil(decoded.duration * 16000));
+async function to16k({ pcm, rate }) {
+  if (rate === 16000 || !pcm.length) return pcm;
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  const off = new OAC(1, frames, 16000);
+  const off = new OAC(1, Math.max(1, Math.ceil((pcm.length * 16000) / rate)), 16000);
+  const buf = off.createBuffer(1, pcm.length, rate);
+  buf.getChannelData(0).set(pcm);
   const src = off.createBufferSource();
-  src.buffer = decoded;
+  src.buffer = buf;
   src.connect(off.destination);
   src.start(0);
-  const pcm = new Float32Array((await off.startRendering()).getChannelData(0));
+  return new Float32Array((await off.startRendering()).getChannelData(0));
+}
+
+function audioStats(pcm) {
   let peak = 0;
   for (let i = 0; i < pcm.length; i++) peak = Math.max(peak, Math.abs(pcm[i]));
-  if (peak > 0 && peak < 0.5) for (let i = 0; i < pcm.length; i++) pcm[i] *= 0.9 / peak;
-  return pcm;
+  return { peak };
+}
+
+function playPcm(pcm) {
+  const ctx = getAudioContext();
+  ctx.resume().catch(() => {});
+  const buf = ctx.createBuffer(1, pcm.length, 16000);
+  buf.getChannelData(0).set(pcm);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start();
 }
 
 /* ---------- Röstmotorn: Pianissimo i en worker, allt sker i enheten ---------- */
 const LOADING_KEY = "rymdplugg:motor-laddas";
+const WASM_KEY = "rymdplugg:utan-webgpu";
 const Engine = {
   state: "checking", detail: "", got: 0, total: 0, backend: "",
   worker: null, nextId: 1, pending: new Map(), listeners: new Set(),
@@ -456,7 +542,11 @@ const Engine = {
     try { localStorage.setItem(LOADING_KEY, String(Date.now())); } catch { /* ignoreras */ }
     try { await navigator.storage?.persist?.(); } catch { /* ignoreras */ }
     let webgpu = false;
-    try { webgpu = !!(navigator.gpu && (await navigator.gpu.requestAdapter())); } catch { webgpu = false; }
+    let wasmOnly = false;
+    try { wasmOnly = localStorage.getItem(WASM_KEY) === "1"; } catch { /* ignoreras */ }
+    if (!wasmOnly) {
+      try { webgpu = !!(navigator.gpu && (await navigator.gpu.requestAdapter())); } catch { webgpu = false; }
+    }
     this.set("loading", "Startar röstmotorn …");
     this.worker.postMessage({ type: "load", webgpu });
   },
@@ -479,6 +569,17 @@ const Engine = {
       else this.fail(m.text);
     }
   },
+  // Starta om motorn med eller utan WebGPU. Valet sparas i webbläsaren.
+  setWebGPU(on) {
+    try { on ? localStorage.removeItem(WASM_KEY) : localStorage.setItem(WASM_KEY, "1"); } catch { /* ignoreras */ }
+    this.worker.terminate();
+    this.backend = "";
+    this.start();
+  },
+  useWasm() {
+    this.setWebGPU(false);
+    location.hash = "";
+  },
   fail(text) {
     try { localStorage.removeItem(LOADING_KEY); } catch { /* ignoreras */ }
     this.set("error", text);
@@ -496,10 +597,8 @@ const Engine = {
   },
 };
 
-async function transcribe(blob) {
+async function transcribe(pcm) {
   if (Engine.state !== "ready") throw new Error("Röstmotorn är inte redo än.");
-  let pcm;
-  try { pcm = await toPcm16k(blob); } catch { throw new Error("Inspelningen gick inte att läsa. Försök igen."); }
   try { return (await Engine.transcribe(pcm)).trim(); }
   catch { throw new Error("Något gick fel när svaret skulle tolkas. Försök igen, eller tryck Visa svaret."); }
 }
@@ -523,7 +622,7 @@ function renderEngineCard() {
   box.dataset.state = Engine.state;
   const title = $("#engine-title"), text = $("#engine-text"), bar = $("#engine-bar"), act = $("#engine-action");
   bar.hidden = Engine.state !== "downloading";
-  act.hidden = !["missing", "crashed", "error"].includes(Engine.state);
+  act.hidden = !["missing", "crashed", "error"].includes(Engine.state) && !(Engine.state === "ready" && wasmOnly());
   const pct = Engine.total ? Math.round((Engine.got / Engine.total) * 100) : 0;
   bar.firstElementChild.style.width = `${pct}%`;
   const [t, d, a] = {
@@ -531,7 +630,7 @@ function renderEngineCard() {
     missing: ["Ladda ner röstmotorn", "För att svara med rösten behöver telefonen ladda ner Pianissimo en gång, ungefär 530 MB. Gör det på wifi. Sedan fungerar röstsvaren utan att något skickas iväg.", "Ladda ner (530 MB)"],
     downloading: [`Laddar ner röstmotorn: ${pct} %`, `${mb(Engine.got)} av ${mb(Engine.total)} MB. Du kan börja öva under tiden.`, ""],
     loading: ["Röstmotorn startar …", "Det kan ta upp till en halv minut. Du kan börja öva under tiden.", ""],
-    ready: ["Röstsvaren är redo", "", ""],
+    ready: [`Röstsvaren är redo (${Engine.backend === "webgpu" ? "WebGPU" : "processorn"})`, "", wasmOnly() ? "Prova WebGPU igen" : ""],
     crashed: ["Röstmotorn stängdes av", "Förra gången hann den inte starta, troligen för att telefonen fick slut på minne. Stäng andra appar och försök igen. Fungerar det inte kan du öva på en dator i stället.", "Försök igen"],
     error: ["Röstmotorn fungerar inte", `Något gick fel: ${Engine.detail} Du kan ändå öva och trycka Visa svaret, eller använda en dator.`, "Försök igen"],
     unsupported: ["Röstsvar fungerar inte här", "Den här webbläsaren kan inte köra röstmotorn. Du kan ändå öva och trycka Visa svaret.", ""],
@@ -539,7 +638,14 @@ function renderEngineCard() {
   title.textContent = t; text.textContent = d; text.hidden = !d; act.textContent = a;
 }
 Engine.listeners.add(renderEngineCard);
-$("#engine-action").onclick = () => { if (Engine.state === "error") { Engine.worker.terminate(); Engine.start(); } else Engine.load(); };
+function wasmOnly() {
+  try { return localStorage.getItem(WASM_KEY) === "1"; } catch { return false; }
+}
+$("#engine-action").onclick = () => {
+  if (Engine.state === "ready") Engine.setWebGPU(true);
+  else if (Engine.state === "error") { Engine.worker.terminate(); Engine.start(); }
+  else Engine.load();
+};
 
 /* ---------- Uppläsning ---------- */
 function speakButton(text) {
