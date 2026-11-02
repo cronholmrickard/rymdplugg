@@ -8,24 +8,27 @@ Begrepp, Vem är jag? och resonemangsfrågorna besvaras med rösten.
 ## Built with Pianissimo
 
 Röstsvaren görs om till text av [Klang Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv),
-svensk taligenkänning från Klang AI AB (CC BY 4.0). Modellen körs i ONNX int8-versionen
-([KlangAI/pianissimo-sv-onnx](https://huggingface.co/KlangAI/pianissimo-sv-onnx)) i ett Hugging Face Space,
-med ordförstärkning för kapitlets namn och begrepp (Merkurius, Kepler, ljusår, Andromeda …).
+svensk taligenkänning från Klang AI AB (CC BY 4.0). Modellen körs **helt i webbläsaren**, så ingen server behövs
+och inspelningen lämnar aldrig telefonen.
+
+- Vikter: [mrfakename/pianissimo-sv-ONNX](https://huggingface.co/mrfakename/pianissimo-sv-ONNX), en WebGPU-anpassad
+  version av Klangs officiella int4-export ([KlangAI/pianissimo-sv-onnx](https://huggingface.co/KlangAI/pianissimo-sv-onnx)).
+  Ungefär 530 MB som laddas ner en gång och sparas i webbläsarens cache.
+- Motor: bygger på [Pianissimo WebGPU](https://huggingface.co/spaces/mrfakename/pianissimo-sv-webgpu) av mrfakename
+  (CC BY 4.0). Encodern körs med onnxruntime-web på WebGPU, eller WASM om WebGPU saknas.
+- Tillagt här: Klangs ordförstärkning (phrase boosting) för kapitlets namn och begrepp, som Merkurius, Kepler och ljusår.
+  Trädet räknas fram med Klangs `phrase_boost.py` och ligger i `web/asr/boost.json`.
 
 ## Delar
 
-- `web/`: den statiska appen (HTML, CSS, JS utan byggsteg), publiceras på GitHub Pages.
-  Frågorna finns i `web/data.js`.
-- `space/`: taligenkänningen, ett Docker-Space på Hugging Face (`KlangRickard/rymdplugg-asr`).
-  `POST /transcribe` tar WAV 16 kHz mono och svarar med `{"text": "..."}`. Inget ljud sparas.
+- `web/`: hela appen (HTML, CSS, JS utan byggsteg), publiceras på GitHub Pages. Frågorna finns i `web/data.js`.
+- `web/asr/`: röstmotorn som körs i en Web Worker.
 
-Appen spelar in med MediaRecorder, gör om ljudet till 16 kHz mono WAV i webbläsaren och skickar det till Spacet.
 Svaren rättas genom att leta efter nyckelord för varje punkt i ett bra svar, och sedan bedömer eleven själv.
-Framsteg sparas bara i telefonen (localStorage).
+Framsteg sparas bara i webbläsaren (localStorage).
 
 ## Köra lokalt
 
 ```sh
-cd space && uv venv && uv pip install -r requirements.txt && .venv/bin/uvicorn app:app --port 7860
-cd web && python3 -m http.server 8000   # appen använder localhost:7860 när den körs på localhost
+cd web && python3 -m http.server 8000
 ```

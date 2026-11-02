@@ -1,8 +1,5 @@
 "use strict";
 
-const ASR_URL = ["localhost", "127.0.0.1"].includes(location.hostname)
-  ? "http://localhost:7860"
-  : "https://klangrickard-rymdplugg-asr.hf.space";
 const STORE_KEY = "rymdplugg:v1";
 const MAX_REC_SECONDS = 90;
 const D = window.DATA;
@@ -232,8 +229,19 @@ function voiceInput(onText, label = "Tryck och svara") {
   const mic = h("button", { type: "button", class: "mic", "aria-label": "Spela in ditt svar" });
   mic.innerHTML = MIC_ICON;
   const lbl = h("p", { class: "mic-label" }, label);
-  const hint = h("p", { class: "mic-hint" }, asrState === "ready" ? "Tryck igen när du är klar." : asrHintText());
+  const hint = h("p", { class: "mic-hint" });
   const box = h("div", { class: "voice" }, mic, lbl, hint);
+  let busy = false;
+  const update = () => {
+    if (busy || Rec.active) return;
+    const ready = Engine.state === "ready";
+    mic.disabled = !ready;
+    hint.textContent = ready ? "Tryck igen när du är klar." : engineHint();
+  };
+  // Följ röstmotorns läge så länge knappen visas, till exempel när den blir klar.
+  const listener = () => { if (box.isConnected) update(); else Engine.listeners.delete(listener); };
+  update();
+  Engine.listeners.add(listener);
   mic.onclick = async () => {
     if (Rec.active) { mic.disabled = true; return Rec.stop(); }
     try {
@@ -249,6 +257,7 @@ function voiceInput(onText, label = "Tryck och svara") {
       mic.classList.remove("rec"); mic.innerHTML = MIC_ICON; mic.setAttribute("aria-label", "Spela in ditt svar");
     }
     mic.hidden = true;
+    busy = true;
     lbl.textContent = ""; lbl.append(h("span", { class: "spinner", role: "status", "aria-label": "Lyssnar" }));
     hint.textContent = "Pianissimo lyssnar på ditt svar …";
     try {
@@ -259,6 +268,8 @@ function voiceInput(onText, label = "Tryck och svara") {
       mic.hidden = false; mic.disabled = false;
       lbl.textContent = "Försök igen";
       hint.textContent = err.message || "Något gick fel med taligenkänningen.";
+    } finally {
+      busy = false;
     }
   };
   return box;
@@ -399,8 +410,8 @@ function decode(buf) {
   });
 }
 
-// Gör om inspelningen till WAV med 16 kHz mono, det format modellen vill ha.
-async function toWav16k(blob) {
+// Gör om inspelningen till 16 kHz mono, det format modellen vill ha.
+async function toPcm16k(blob) {
   const decoded = await decode(await blob.arrayBuffer());
   const frames = Math.max(1, Math.ceil(decoded.duration * 16000));
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
@@ -409,72 +420,120 @@ async function toWav16k(blob) {
   src.buffer = decoded;
   src.connect(off.destination);
   src.start(0);
-  const rendered = await off.startRendering();
-  const pcm = rendered.getChannelData(0);
+  const pcm = new Float32Array((await off.startRendering()).getChannelData(0));
   let peak = 0;
   for (let i = 0; i < pcm.length; i++) peak = Math.max(peak, Math.abs(pcm[i]));
-  const gain = peak > 0 && peak < 0.5 ? 0.9 / peak : 1;
-
-  const out = new DataView(new ArrayBuffer(44 + pcm.length * 2));
-  const str = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
-  str(0, "RIFF"); out.setUint32(4, 36 + pcm.length * 2, true); str(8, "WAVE");
-  str(12, "fmt "); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
-  out.setUint32(24, 16000, true); out.setUint32(28, 32000, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
-  str(36, "data"); out.setUint32(40, pcm.length * 2, true);
-  for (let i = 0; i < pcm.length; i++) {
-    const s = Math.max(-1, Math.min(1, pcm[i] * gain));
-    out.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return new Blob([out.buffer], { type: "audio/wav" });
+  if (peak > 0 && peak < 0.5) for (let i = 0; i < pcm.length; i++) pcm[i] *= 0.9 / peak;
+  return pcm;
 }
+
+/* ---------- Röstmotorn: Pianissimo i en worker, allt sker i enheten ---------- */
+const LOADING_KEY = "rymdplugg:motor-laddas";
+const Engine = {
+  state: "checking", detail: "", got: 0, total: 0, backend: "",
+  worker: null, nextId: 1, pending: new Map(), listeners: new Set(),
+
+  start() {
+    try {
+      this.worker = new Worker("asr/worker.js", { type: "module" });
+    } catch {
+      return this.set("unsupported", "Den här webbläsaren kan inte köra röstmotorn.");
+    }
+    this.worker.onmessage = ({ data }) => this.onMessage(data);
+    this.worker.onerror = () => this.fail("Röstmotorn kunde inte starta.");
+    let crashed = false;
+    try { crashed = !!localStorage.getItem(LOADING_KEY); } catch { /* ignoreras */ }
+    if (crashed) return this.set("crashed");
+    this.worker.postMessage({ type: "check" });
+  },
+  async load() {
+    try { localStorage.setItem(LOADING_KEY, String(Date.now())); } catch { /* ignoreras */ }
+    try { await navigator.storage?.persist?.(); } catch { /* ignoreras */ }
+    let webgpu = false;
+    try { webgpu = !!(navigator.gpu && (await navigator.gpu.requestAdapter())); } catch { webgpu = false; }
+    this.set("loading", "Startar röstmotorn …");
+    this.worker.postMessage({ type: "load", webgpu });
+  },
+  onMessage(m) {
+    if (m.type === "cached") { if (m.cached) this.load(); else this.set("missing"); }
+    else if (m.type === "progress") {
+      this.got = m.got; this.total = m.total;
+      const cached = this.state === "loading" && this.detail.startsWith("Startar");
+      if (!cached || m.got < m.total) this.set("downloading");
+    }
+    else if (m.type === "status") this.set("loading", { "Värmer upp": "Nästan klar …" }[m.text] || "Startar röstmotorn …");
+    else if (m.type === "ready") {
+      try { localStorage.removeItem(LOADING_KEY); } catch { /* ignoreras */ }
+      this.backend = m.backend;
+      this.set("ready");
+    }
+    else if (m.type === "result") { this.pending.get(m.id)?.resolve(m.text); this.pending.delete(m.id); }
+    else if (m.type === "error") {
+      if (m.id && this.pending.has(m.id)) { this.pending.get(m.id).reject(new Error(m.text)); this.pending.delete(m.id); }
+      else this.fail(m.text);
+    }
+  },
+  fail(text) {
+    try { localStorage.removeItem(LOADING_KEY); } catch { /* ignoreras */ }
+    this.set("error", text);
+  },
+  set(state, detail = "") {
+    this.state = state; this.detail = detail;
+    this.listeners.forEach((fn) => fn());
+  },
+  transcribe(pcm) {
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.worker.postMessage({ type: "transcribe", id, audio: pcm }, [pcm.buffer]);
+    });
+  },
+};
 
 async function transcribe(blob) {
-  let wav;
-  try { wav = await toWav16k(blob); } catch { throw new Error("Inspelningen gick inte att läsa. Försök igen."); }
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), 90000);
-  try {
-    const r = await fetch(`${ASR_URL}/transcribe`, { method: "POST", body: wav, headers: { "Content-Type": "audio/wav" }, signal: ctrl.signal });
-    if (!r.ok) throw new Error();
-    setAsrState("ready");
-    return ((await r.json()).text || "").trim();
-  } catch {
-    wakeAsr();
-    throw new Error("Taligenkänningen svarade inte. Den kanske håller på att starta. Vänta en stund och försök igen, eller tryck Visa svaret.");
-  } finally {
-    clearTimeout(timeout);
-  }
+  if (Engine.state !== "ready") throw new Error("Röstmotorn är inte redo än.");
+  let pcm;
+  try { pcm = await toPcm16k(blob); } catch { throw new Error("Inspelningen gick inte att läsa. Försök igen."); }
+  try { return (await Engine.transcribe(pcm)).trim(); }
+  catch { throw new Error("Något gick fel när svaret skulle tolkas. Försök igen, eller tryck Visa svaret."); }
 }
 
-/* ---------- Status för taligenkänningen ---------- */
-let asrState = "waking", waking = false;
-function asrHintText() {
-  return asrState === "down"
-    ? "Röstsvaren svarar inte just nu. Du kan prova ändå eller trycka Visa svaret."
-    : "Röstsvaren håller på att starta. Det kan ta en minut första gången.";
+const mb = (n) => Math.round(n / 1e6);
+function engineHint() {
+  return {
+    checking: "Röstmotorn startar …",
+    loading: "Röstmotorn startar, det tar en liten stund …",
+    downloading: `Röstmotorn laddas ner: ${mb(Engine.got)} av ${mb(Engine.total)} MB.`,
+    missing: "Röstmotorn är inte nedladdad. Gå till start och ladda ner den, eller tryck Visa svaret.",
+    crashed: "Röstmotorn behöver startas om. Gå till start, eller tryck Visa svaret.",
+    error: "Röstmotorn fungerar inte just nu. Tryck Visa svaret så kan du ändå öva.",
+    unsupported: "Röstsvar fungerar inte i den här webbläsaren. Tryck Visa svaret så kan du ändå öva.",
+  }[Engine.state] || "";
 }
-function setAsrState(state) {
-  asrState = state;
-  const el = $("#asr-status");
-  el.dataset.state = state;
-  $("#asr-text").textContent = { waking: "Röstsvaren startar, det kan ta någon minut …", ready: "Röstsvaren är redo", down: "Röstsvaren svarar inte just nu. Tryck här för att försöka igen." }[state];
+
+// Rutan på startsidan som visar röstmotorns läge.
+function renderEngineCard() {
+  const box = $("#engine");
+  box.dataset.state = Engine.state;
+  const title = $("#engine-title"), text = $("#engine-text"), bar = $("#engine-bar"), act = $("#engine-action");
+  bar.hidden = Engine.state !== "downloading";
+  act.hidden = !["missing", "crashed", "error"].includes(Engine.state);
+  const pct = Engine.total ? Math.round((Engine.got / Engine.total) * 100) : 0;
+  bar.firstElementChild.style.width = `${pct}%`;
+  const [t, d, a] = {
+    checking: ["Röstmotorn startar …", "", ""],
+    missing: ["Ladda ner röstmotorn", "För att svara med rösten behöver telefonen ladda ner Pianissimo en gång, ungefär 530 MB. Gör det på wifi. Sedan fungerar röstsvaren utan att något skickas iväg.", "Ladda ner (530 MB)"],
+    downloading: [`Laddar ner röstmotorn: ${pct} %`, `${mb(Engine.got)} av ${mb(Engine.total)} MB. Du kan börja öva under tiden.`, ""],
+    loading: ["Röstmotorn startar …", "Det kan ta upp till en halv minut. Du kan börja öva under tiden.", ""],
+    ready: ["Röstsvaren är redo", "", ""],
+    crashed: ["Röstmotorn stängdes av", "Förra gången hann den inte starta, troligen för att telefonen fick slut på minne. Stäng andra appar och försök igen. Fungerar det inte kan du öva på en dator i stället.", "Försök igen"],
+    error: ["Röstmotorn fungerar inte", `Något gick fel: ${Engine.detail} Du kan ändå öva och trycka Visa svaret, eller använda en dator.`, "Försök igen"],
+    unsupported: ["Röstsvar fungerar inte här", "Den här webbläsaren kan inte köra röstmotorn. Du kan ändå öva och trycka Visa svaret.", ""],
+  }[Engine.state];
+  title.textContent = t; text.textContent = d; text.hidden = !d; act.textContent = a;
 }
-async function wakeAsr() {
-  if (waking) return;
-  waking = true;
-  if (asrState !== "ready") setAsrState("waking");
-  const t0 = Date.now();
-  while (Date.now() - t0 < 300000) {
-    try {
-      const r = await fetch(`${ASR_URL}/`, { cache: "no-store" });
-      if (r.ok && (await r.json()).status === "ok") { setAsrState("ready"); waking = false; return; }
-    } catch { /* sover fortfarande */ }
-    await sleep(5000);
-  }
-  setAsrState("down");
-  waking = false;
-}
-$("#asr-status").onclick = () => { if (asrState === "down") wakeAsr(); };
+Engine.listeners.add(renderEngineCard);
+$("#engine-action").onclick = () => { if (Engine.state === "error") { Engine.worker.terminate(); Engine.start(); } else Engine.load(); };
 
 /* ---------- Uppläsning ---------- */
 function speakButton(text) {
@@ -503,4 +562,5 @@ function stopEverything() {
 
 /* ---------- Start ---------- */
 routeFromHash();
-wakeAsr();
+renderEngineCard();
+Engine.start();

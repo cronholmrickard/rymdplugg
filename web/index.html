@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rymdplugg</title>
-<meta name="description" content="Öva inför NO-provet om solsystemet och Vintergatan. Svara med rösten, taligenkänning med Klang Pianissimo.">
+<script>window.coi = { coepCredentialless: () => false, quiet: true };</script>
+<script src="coi-serviceworker.js"></script>
+<meta name="description" content="Öva inför NO-provet om solsystemet och Vintergatan. Svara med rösten, med Klang Pianissimo direkt i telefonen.">
 <meta name="theme-color" content="#F2F4F9" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0D1324" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
@@ -16,7 +18,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,9 +28,14 @@
     <span class="eyebrow">NO åk 6 · Solsystemet och Vintergatan</span>
     <h1>Rymdplugg</h1>
     <p class="lede">Välj vad du vill öva på. Där det finns en mikrofon svarar du med rösten.</p>
-    <p class="asr-status" id="asr-status" data-state="waking"><span class="dot"></span><span id="asr-text">Röstsvaren startar …</span></p>
   </header>
   <main class="wrap">
+    <section class="engine" id="engine" data-state="checking" aria-live="polite">
+      <p class="engine-title"><span class="dot"></span><span id="engine-title">Röstmotorn startar …</span></p>
+      <p class="engine-text" id="engine-text" hidden></p>
+      <div class="bar" id="engine-bar" hidden><span></span></div>
+      <button class="btn primary" id="engine-action" type="button" hidden></button>
+    </section>
     <ul class="modes" id="modes"></ul>
     <button class="missed" id="missed" type="button" hidden></button>
     <button class="linkish" id="reset-progress" type="button">Nollställ allt jag övat på</button>
@@ -40,7 +47,8 @@
   </main>
   <footer class="wrap credit">
     <p class="built">Built with <a href="https://klang.ai/pianissimo/" target="_blank" rel="noopener">Pianissimo</a></p>
-    <p>Röstsvaren görs om till text av <a href="https://huggingface.co/KlangAI/pianissimo-sv" target="_blank" rel="noopener">Klang Pianissimo</a>, svensk taligenkänning från Klang AI AB (CC BY 4.0). Inspelningen skickas till taligenkänningen och sparas inte.</p>
+    <p>Röstsvaren görs om till text av <a href="https://huggingface.co/KlangAI/pianissimo-sv" target="_blank" rel="noopener">Klang Pianissimo</a>, svensk taligenkänning från Klang AI AB (CC BY 4.0). Modellen körs direkt i telefonen, så inspelningen lämnar aldrig enheten.</p>
+    <p>Webbversionen av modellen bygger på <a href="https://huggingface.co/spaces/mrfakename/pianissimo-sv-webgpu" target="_blank" rel="noopener">Pianissimo WebGPU</a> av mrfakename (CC BY 4.0).</p>
   </footer>
 </div>
 
