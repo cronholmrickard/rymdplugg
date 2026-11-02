@@ -726,11 +726,28 @@ function speakButton(text, label = "Läs upp frågan") {
   return b;
 }
 
-// Det läroboken säger, med knapp för uppläsning.
-function bookBox([page, text]) {
+// Det läroboken säger: hela avsnitten, med meningarna som hör till frågan markerade. Uppläsningen tar allt.
+function bookBox(refs) {
+  const secs = refs.map(([id, ...marks]) => [window.BOOK.sections[id], marks]);
+  const speech = secs.map(([[, , paras]]) => paras.join(" ")).join(" ");
   return h("div", { class: "book" },
-    h("div", { class: "book-head" }, h("span", { class: "lbl" }, `Så står det i boken, sidan ${page}`), speakButton(text, "Läs upp texten ur boken")),
-    h("p", {}, text));
+    h("div", { class: "book-head" }, h("span", { class: "lbl" }, "Så står det i boken"), speakButton(speech, "Läs upp texten ur boken")),
+    ...secs.map(([[page, title, paras], marks]) => h("section", {},
+      h("h3", {}, title, h("span", { class: "page" }, ` · s. ${page}`)),
+      ...paras.map((para) => h("p", {}, ...markUp(para, marks))))));
+}
+
+function markUp(text, marks) {
+  const out = [];
+  let rest = text;
+  for (;;) {
+    let at = -1, hit = "";
+    for (const m of marks) { const i = rest.indexOf(m); if (i >= 0 && (at < 0 || i < at)) { at = i; hit = m; } }
+    if (at < 0) { if (rest) out.push(rest); return out; }
+    if (at) out.push(rest.slice(0, at));
+    out.push(h("mark", {}, hit));
+    rest = rest.slice(at + hit.length);
+  }
 }
 
 function stopEverything() {
